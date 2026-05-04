@@ -4,6 +4,10 @@ import numpy as np
 import re
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+import os
+
+#Let user choose whether to parse NMOS or PMOS
+
 
 def parse_cadence_vcsv(filepath, y_col_name):
     """Parses a Cadence waveVsWave CSV and converts it to a long-format DataFrame."""
@@ -38,56 +42,67 @@ def parse_cadence_vcsv(filepath, y_col_name):
     return pd.concat(frames, ignore_index=True).dropna()
 
 
-print("Parser function loaded successfully!")
+def generate_dataset(transistor):
+    print("Parser function loaded successfully!")
 
-# 1. Parse the files (ensure the filenames match your local directory)
-df_idw = parse_cadence_vcsv('NMOS/idW_vs_gmid_vdssweep.vcsv', 'Id_W')
-df_gain = parse_cadence_vcsv('NMOS/gmgds_vs_gmid_vdssweep.vcsv', 'gm_gds')
-
-# 2. Merge them together on L, VDS, and the sweep index
-df_nmos = pd.merge(df_idw, df_gain, on=['L', 'VDS', 'sweep_index'])
-
-# 3. Clean up the dataframe (drop the redundant sweep_index and duplicate gm_Id_y)
-df_nmos = df_nmos.rename(columns={'gm_Id_x': 'gm_Id'}).drop(columns=['sweep_index', 'gm_Id_y'])
-
-# 4. Filter the Subthreshold Spaghetti (Noise)
-# We only want realistic analog operating points (gm/Id between 2 and 25)
-df_nmos = df_nmos[(df_nmos['gm_Id'] >= 2.0) & (df_nmos['gm_Id'] <= 25.0)]
-df_nmos.to_csv("cleaned.csv", index=False)
-
-print(f"Clean NMOS Dataset ready! Total data points: {len(df_nmos)}")
-# print(df_nmos.head())
+    if transistor == "nmos":
+        idW_filepath = 'NMOS/idW_vs_gmid_vdssweep.vcsv'
+        gain_filepath = 'NMOS/gmgds_vs_gmid_vdssweep.vcsv'
+    elif transistor == "pmos":
+        idW_filepath = 'PMOS/idW_vs_gmid_vdssweep_pmos.vcsv'
+        gain_filepath = 'PMOS/gmgds_vs_gmid_vdssweep_pmos.vcsv'
 
 
-# Separate Inputs (Features) and Outputs (Targets)
-# The ANN receives L, VDS, and gm_Id to predict Id_W and gm_gds
-X = df_nmos[['gm_Id', 'L', 'VDS']].values
-y = df_nmos[['Id_W', 'gm_gds']].values
+    # 1. Parse the files (ensure the filenames match your local directory)
+    df_idw = parse_cadence_vcsv(idW_filepath, 'Id_W')
+    df_gain = parse_cadence_vcsv(gain_filepath, 'gm_gds')
 
-# Initialize Scalers
-scaler_X = StandardScaler()
-scaler_y = StandardScaler()
+    # 2. Merge them together on L, VDS, and the sweep index
+    df_transistor = pd.merge(df_idw, df_gain, on=['L', 'VDS', 'sweep_index'])
 
-# Fit and transform the data
-X_scaled = scaler_X.fit_transform(X)
-y_scaled = scaler_y.fit_transform(y)
+    # 3. Clean up the dataframe (drop the redundant sweep_index and duplicate gm_Id_y)
+    df_transistor = df_transistor.rename(columns={'gm_Id_x': 'gm_Id'}).drop(columns=['sweep_index', 'gm_Id_y'])
 
-# Split into Training (80%), Validation (10%), and Test (10%) sets
-X_train, X_temp, y_train, y_temp = train_test_split(X_scaled, y_scaled, test_size=0.20, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.50, random_state=42)
+    # 4. Filter the Subthreshold Spaghetti (Noise)
+    # We only want realistic analog operating points (gm/Id between 2 and 25)
+    df_transistor = df_transistor[(df_transistor['gm_Id'] >= 2.0) & (df_transistor['gm_Id'] <= 25.0)]
+    df_transistor.to_csv("cleaned.csv", index=False)
 
-print(f"Training set size:   {len(X_train)}")
-print(f"Validation set size: {len(X_val)}")
-print(f"Test set size:       {len(X_test)}")
+    print(f"Clean NMOS Dataset ready! Total data points: {len(df_transistor)}")
+    # print(df_transistor.head())
 
-#plotting the cleaned NMOS dataset
 
-def plotGraph():
+    # Separate Inputs (Features) and Outputs (Targets)
+    # The ANN receives L, VDS, and gm_Id to predict Id_W and gm_gds
+    X = df_transistor[['gm_Id', 'L', 'VDS']].values
+    y = df_transistor[['Id_W', 'gm_gds']].values
+
+    # Initialize Scalers
+    scaler_X = StandardScaler()
+    scaler_y = StandardScaler()
+
+    # Fit and transform the data
+    X_scaled = scaler_X.fit_transform(X)
+    y_scaled = scaler_y.fit_transform(y)
+
+    # Split into Training (80%), Validation (10%), and Test (10%) sets
+    X_train, X_temp, y_train, y_temp = train_test_split(X_scaled, y_scaled, test_size=0.20, random_state=42)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.50, random_state=42)
+
+    print(f"Training set size:   {len(X_train)}")
+    print(f"Validation set size: {len(X_val)}")
+    print(f"Test set size:       {len(X_test)}")
+
+    return X_train, X_val, X_test, y_train, y_val, y_test, df_transistor
+
+#Plotting the cleaned NMOS dataset
+
+def plotGraph(df_transistor):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
     # 3. Plot 1: Current Density (Id/W) vs gm/Id
     # We multiply 'L' by 1e9 to convert the colormap label from meters to nanometers
-    scatter1 = ax1.scatter(df_nmos['gm_Id'], df_nmos['Id_W'], c=df_nmos['L']*1e9, cmap='viridis', alpha=0.7)
+    scatter1 = ax1.scatter(df_transistor['gm_Id'], df_transistor['Id_W'], c=df_transistor['L']*1e9, cmap='viridis', alpha=0.7)
     ax1.set_xlabel('gm/Id (S/A)')
     ax1.set_ylabel('Id/W (A/m)')
     ax1.set_title('Current Density vs Transconductance Efficiency')
@@ -95,7 +110,7 @@ def plotGraph():
     cbar1.set_label('Length (nm)')
 
     # 4. Plot 2: Intrinsic Gain (gm/gds) vs gm/Id
-    scatter2 = ax2.scatter(df_nmos['gm_Id'], df_nmos['gm_gds'], c=df_nmos['L']*1e9, cmap='plasma', alpha=0.7)
+    scatter2 = ax2.scatter(df_transistor['gm_Id'], df_transistor['gm_gds'], c=df_transistor['L']*1e9, cmap='plasma', alpha=0.7)
     ax2.set_xlabel('gm/Id (S/A)')
     ax2.set_ylabel('gm/gds (V/V)')
     ax2.set_title('Intrinsic Gain vs Transconductance Efficiency')
@@ -107,5 +122,6 @@ def plotGraph():
     plt.savefig('cleaned.png')
     plt.show()
 
-
-plotGraph()
+if __name__ == "__main__":
+    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset()
+    plotGraph(df_transistor)
