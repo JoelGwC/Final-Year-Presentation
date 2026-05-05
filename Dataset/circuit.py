@@ -110,7 +110,7 @@ class RAFFC_OpAmp:
     
     def calculate_physical_dimensions(self, final_optimal_guesses, bias_currents):
         """Run this ONCE after the optimizer finishes to get Cadence widths."""
-        gm_id_1, L_1, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b = final_optimal_guesses
+        gm_id_1, L_1, gm_id_L, L_L, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b = final_optimal_guesses
         Id_1, Id_2, Id_3, Id_b = bias_currents
         vds_guess = self.VDD / 2.0 
 
@@ -119,16 +119,27 @@ class RAFFC_OpAmp:
         id_w_2, _ = self.get_transistor_params(gm_id_2, L_2, vds_guess)
         id_w_3, _ = self.get_transistor_params(gm_id_3, L_3, vds_guess)
         id_w_b, _ = self.get_transistor_params(gm_id_b, L_b, vds_guess)
+        id_w_L, _ = self.get_transistor_params(gm_id_L, L_L, vds_guess, is_nmos=True)
 
         # Calculate final physical Widths (W = Id / (Id/W))
         W_1 = Id_1 / id_w_1
         W_2 = Id_2 / id_w_2
         W_3 = Id_3 / id_w_3
         W_b = Id_b / id_w_b
+        W_L = Id_1 / id_w_L  # Width for M3 and M4 (ADDED!)
 
         print(f"Final M1 Dimensions -> W: {W_1*1e6:.2f}um, L: {L_1*1e9:.0f}nm")
+        print(f"Final M3/M4 Dimensions -> W: {W_L*1e6:.2f}um, L: {L_L*1e9:.0f}nm") # ADDED!
         print(f"Final M9 Dimensions -> W: {W_2*1e6:.2f}um, L: {L_2*1e9:.0f}nm")
         print(f"Final M11 Dimensions-> W: {W_3*1e6:.2f}um, L: {L_3*1e9:.0f}nm")
         print(f"Final M6 Dimensions -> W: {W_b*1e6:.2f}um, L: {L_b*1e9:.0f}nm")
         
         return W_1, W_2, W_3, W_b
+    
+
+if __name__ == "__main__":
+
+    testCircuit = RAFFC_OpAmp('nmos_surrogate_model.pth', 'pmos_surrogate_model.pth', 'scaler_X.pkl', 'scaler_y.pkl')
+    id_w, gm_gds = testCircuit.get_transistor_params(gm_id=2.0, L=45e-9, vds=1.0, is_nmos=True)
+    print("Completed!")
+    print(f"{id_w:.2f} uA/um, {gm_gds:.2f} S/S")

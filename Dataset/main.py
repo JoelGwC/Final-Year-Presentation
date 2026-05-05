@@ -5,6 +5,7 @@ import re
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import os
+import joblib
 
 #Let user choose whether to parse NMOS or PMOS
 
@@ -48,14 +49,17 @@ def generate_dataset(transistor):
     if transistor == "nmos":
         idW_filepath = 'NMOS/idW_vs_gmid_vdssweep.vcsv'
         gain_filepath = 'NMOS/gmgds_vs_gmid_vdssweep.vcsv'
+        vgs_filepath = 'NMOS/vgs_vs_gmid_vdssweep.vcsv'
     elif transistor == "pmos":
         idW_filepath = 'PMOS/idW_vs_gmid_vdssweep_pmos.vcsv'
         gain_filepath = 'PMOS/gmgds_vs_gmid_vdssweep_pmos.vcsv'
+        vgs_filepath = 'NMOS/vgs_vs_gmid_vdssweep_pmos.vcsv'
 
 
     # 1. Parse the files (ensure the filenames match your local directory)
     df_idw = parse_cadence_vcsv(idW_filepath, 'Id_W')
     df_gain = parse_cadence_vcsv(gain_filepath, 'gm_gds')
+    # df_vgs = parse_cadence_vcsv(vgs_filepath, 'VGS') # ONLY activate when vgs vs gmid is available
 
     # 2. Merge them together on L, VDS, and the sweep index
     df_transistor = pd.merge(df_idw, df_gain, on=['L', 'VDS', 'sweep_index'])
@@ -75,7 +79,8 @@ def generate_dataset(transistor):
     # Separate Inputs (Features) and Outputs (Targets)
     # The ANN receives L, VDS, and gm_Id to predict Id_W and gm_gds
     X = df_transistor[['gm_Id', 'L', 'VDS']].values
-    y = df_transistor[['Id_W', 'gm_gds']].values
+    y = df_transistor[['Id_W', 'gm_gds']].values 
+    # y = df_transistor[['Id_W', 'gm_gds', 'VGS']].values # Uncomment if you want to include VGS
 
     # Initialize Scalers
     scaler_X = StandardScaler()
@@ -84,6 +89,9 @@ def generate_dataset(transistor):
     # Fit and transform the data
     X_scaled = scaler_X.fit_transform(X)
     y_scaled = scaler_y.fit_transform(y)
+
+    joblib.dump(scaler_X, "scaler_X.pkl")
+    joblib.dump(scaler_y, "scaler_y.pkl")
 
     # Split into Training (80%), Validation (10%), and Test (10%) sets
     X_train, X_temp, y_train, y_temp = train_test_split(X_scaled, y_scaled, test_size=0.20, random_state=42)
@@ -123,5 +131,5 @@ def plotGraph(df_transistor):
     plt.show()
 
 if __name__ == "__main__":
-    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset()
+    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset("nmos")
     plotGraph(df_transistor)
