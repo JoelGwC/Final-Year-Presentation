@@ -44,7 +44,7 @@ class KNeighbors():
     
 
 class Model500GELU(nn.Module):
-    def __init__(self, input_count=2, output_count=2):
+    def __init__(self, input_count=3, output_count=6):
         super(Model500GELU, self).__init__()
         self.network = nn.Sequential(
             nn.Linear(input_count, 200),

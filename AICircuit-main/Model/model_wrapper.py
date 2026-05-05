@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch
 import wandb
+import time
 
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.svm import SVR
@@ -68,7 +69,7 @@ class PytorchModelWrapper:
         losses = []
         val_losses = []
         device = self.train_config["device"]
-
+        start_time = time.time()  # <--- Capture start time
         for epoch in range(self.train_config["epochs"]):
             self.model.train()
             avg_loss = 0
@@ -111,6 +112,10 @@ class PytorchModelWrapper:
 
             if self.logging:
                 wandb.log({'train_loss': avg_loss, 'val_loss': val_avg_loss, 'epoch': epoch, })
+        # END TIMER HERE
+        end_time = time.time()  # <--- Capture end time
+        total_duration = end_time - start_time # <--- Calculate difference
+        print(f"Total time for {self.train_config['epochs']} epochs: {total_duration:.2f} seconds") # <--- Print result
 
         result_dict = dict()
 

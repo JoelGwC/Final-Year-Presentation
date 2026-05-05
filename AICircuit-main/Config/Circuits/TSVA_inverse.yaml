@@ -1,0 +1,38 @@
+# Config/tsva_inverse.yaml
+
+# --- Project Settings ---
+experiment_name: "TSVA_Inverse_Run"
+model_name: "TSVA_Inverse_Net"
+save_dir: "./Results/TSVA_Inverse/"
+
+# --- Data Settings ---
+data_path: "./Data/tsva_dataset.csv"
+
+# SWAP 1: Performance Metrics are now the INPUTS
+parameter_list:
+  - "VoltageGain"
+  - "Bandwidth"
+  - "PowerConsumption"
+
+# SWAP 2: Circuit Parameters are now the OUTPUTS (Targets)
+performance_list:
+  - "WN1"
+  - "WP1"
+  - "WCS"
+  - "WNOUT"
+  - "WPOUT"
+  - "C0"
+  - "C1"
+
+# --- Model Settings ---
+model_type: 1
+input_count: 3 # Changed from 7 to 3
+output_count: 7 # Changed from 3 to 7
+
+# --- Training Hyperparameters ---
+epochs: 1000 # Inverse models often need more training
+batch_size: 32
+learning_rate: 0.001
+subset: [1.0]
+device: "cpu"
+save_model: True
