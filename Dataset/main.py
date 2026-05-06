@@ -90,9 +90,9 @@ def generate_dataset(transistor):
     X_scaled = scaler_X.fit_transform(X)
     y_scaled = scaler_y.fit_transform(y)
 
-    joblib.dump(scaler_X, "scaler_X.pkl")
-    joblib.dump(scaler_y, "scaler_y.pkl")
-
+    joblib.dump(scaler_X, f'scaler_X_{transistor}.pkl')
+    joblib.dump(scaler_y, f'scaler_y_{transistor}.pkl')
+    
     # Split into Training (80%), Validation (10%), and Test (10%) sets
     X_train, X_temp, y_train, y_temp = train_test_split(X_scaled, y_scaled, test_size=0.20, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.50, random_state=42)
@@ -131,5 +131,5 @@ def plotGraph(df_transistor):
     plt.show()
 
 if __name__ == "__main__":
-    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset("nmos")
+    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset("pmos")
     plotGraph(df_transistor)

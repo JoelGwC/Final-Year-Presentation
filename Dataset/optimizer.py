@@ -44,7 +44,7 @@ class CircuitOptimizer(Problem):
             
             # Phase 3 Evaluator outputs
             # Assuming your evaluate_performance function returns (Gain, GBW, PM, Power)
-            gain, gbw, pm, power = self.evaluator.evaluate_performance(guesses, bias_currents)
+            gain, gbw, pm, power, _ = self.evaluator.evaluate(guesses)
             
             # --- OBJECTIVE ---
             # We want to minimize Power. pymoo always minimizes F.
@@ -72,10 +72,10 @@ if __name__ == "__main__":
     print("Initializing Phase 3 Evaluator...")
     # NOTE: Ensure you pass the correct paths to your trained .pth models and scalers
     # Assuming you have instantiated your nmos_model and loaded the weights:
-    # evaluator = RAFFC_OpAmp(nmos_model, scaler_X, scaler_y)
+    evaluator = RAFFC_OpAmp('nmos_surrogate_model.pth', 'pmos_surrogate_model.pth', 'scaler_X_nmos.pkl', 'scaler_y_nmos.pkl')
     
     # For demonstration, we assume 'evaluator' is properly initialized here.
-    # problem = CircuitOptimizer(evaluator)
+    problem = CircuitOptimizer(evaluator)
     
     print("Setting up NSGA-II Optimizer...")
     algorithm = NSGA2(
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         
         # Call Phase 3 to calculate final Cadence dimensions!
         bias_currents = [10e-6, 20e-6, 20e-6, 20e-6]
-        # evaluator.calculate_physical_dimensions(optimal_guesses, bias_currents)
+        evaluator.calculate_physical_dimensions(optimal_guesses, bias_currents)
         
     else:
         print("\nOptimization Failed: No design found that satisfies all constraints.")
