@@ -42,7 +42,7 @@ class CircuitOptimizer(Problem):
             
             # Phase 3 Evaluator outputs
             # Assuming your evaluate_performance function returns (Gain, GBW, PM, Power)
-            gain, gbw, pm, power, _ = self.evaluator.evaluate(guesses)
+            gain, gbw, pm, power, CC2 = self.evaluator.evaluate(guesses)
             
             # --- OBJECTIVE ---
             # We want to minimize Power. pymoo always minimizes F.
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         'scaler_y_pmos.pkl'
     )
     
-    # For demonstration, we assume 'evaluator' is properly initialized here.
+    
     problem = CircuitOptimizer(evaluator)
     
     print("Setting up NSGA-II Optimizer...")

@@ -53,24 +53,26 @@ def generate_dataset(transistor):
     elif transistor == "pmos":
         idW_filepath = 'PMOS/idW_vs_gmid_vdssweep_pmos.vcsv'
         gain_filepath = 'PMOS/gmgds_vs_gmid_vdssweep_pmos.vcsv'
-        vgs_filepath = 'NMOS/vgs_vs_gmid_vdssweep_pmos.vcsv'
+        vgs_filepath = 'PMOS/vgs_vs_gmid_vdssweep_pmos.vcsv'
 
 
     # 1. Parse the files (ensure the filenames match your local directory)
     df_idw = parse_cadence_vcsv(idW_filepath, 'Id_W')
     df_gain = parse_cadence_vcsv(gain_filepath, 'gm_gds')
-    # df_vgs = parse_cadence_vcsv(vgs_filepath, 'VGS') # ONLY activate when vgs vs gmid is available
+    df_vgs = parse_cadence_vcsv(vgs_filepath, 'VGS') # ONLY activate when vgs vs gmid is available
 
     # 2. Merge them together on L, VDS, and the sweep index
-    df_transistor = pd.merge(df_idw, df_gain, on=['L', 'VDS', 'sweep_index'])
+    df_temp = pd.merge(df_idw, df_gain, on=['L', 'VDS', 'sweep_index'])
+    df_temp = df_temp.rename(columns={'gm_Id_x': 'gm_Id'}).drop(columns=['gm_Id_y'])
 
+    # Merge VGS data
+    df_transistor = pd.merge(df_temp, df_vgs, on=['L', 'VDS', 'sweep_index'])
+    
     # 3. Clean up the dataframe (drop the redundant sweep_index and duplicate gm_Id_y)
-    df_transistor = df_transistor.rename(columns={'gm_Id_x': 'gm_Id'}).drop(columns=['sweep_index', 'gm_Id_y'])
-
-    # 4. Filter the Subthreshold Spaghetti (Noise)
+    df_transistor = df_transistor.rename(columns={'gm_Id_x': 'gm_Id'}).drop(columns=['sweep_index', 'gm_Id_y'])    # 4. Filter the Subthreshold Spaghetti (Noise)
     # We only want realistic analog operating points (gm/Id between 2 and 25)
     df_transistor = df_transistor[(df_transistor['gm_Id'] >= 2.0) & (df_transistor['gm_Id'] <= 25.0)]
-    df_transistor.to_csv("cleaned.csv", index=False)
+    df_transistor.to_csv(f'{transistor}_cleaned.csv', index=False)
 
     print(f"Clean NMOS Dataset ready! Total data points: {len(df_transistor)}")
     # print(df_transistor.head())
@@ -79,8 +81,7 @@ def generate_dataset(transistor):
     # Separate Inputs (Features) and Outputs (Targets)
     # The ANN receives L, VDS, and gm_Id to predict Id_W and gm_gds
     X = df_transistor[['gm_Id', 'L', 'VDS']].values
-    y = df_transistor[['Id_W', 'gm_gds']].values 
-    # y = df_transistor[['Id_W', 'gm_gds', 'VGS']].values # Uncomment if you want to include VGS
+    y = df_transistor[['Id_W', 'gm_gds', 'VGS']].values # Uncomment if you want to include VGS
 
     # Initialize Scalers
     scaler_X = StandardScaler()
@@ -105,7 +106,7 @@ def generate_dataset(transistor):
 
 #Plotting the cleaned NMOS dataset
 
-def plotGraph(df_transistor):
+def plotGraph(df_transistor, transistor):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
     # 3. Plot 1: Current Density (Id/W) vs gm/Id
@@ -127,9 +128,11 @@ def plotGraph(df_transistor):
 
     # 5. Format and display the plots
     plt.tight_layout()
-    plt.savefig('cleaned.png')
+    plt.savefig(f'{transistor}_cleaned.png')
     plt.show()
 
 if __name__ == "__main__":
-    X_train, X_val, X_test, y_train, y_val, y_test, df_transistor = generate_dataset("pmos")
-    plotGraph(df_transistor)
+    X_train, X_val, X_test, y_train, y_val, y_test, df_pmos = generate_dataset("pmos")
+    plotGraph(df_pmos, "pmos")
+    X_train, X_val, X_test, y_train, y_val, y_test, df_nmos = generate_dataset("nmos")
+    plotGraph(df_nmos, "nmos")
