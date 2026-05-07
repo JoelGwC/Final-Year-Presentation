@@ -4,10 +4,12 @@ import joblib
 from model import SurrogateModel 
 
 class RAFFC_OpAmp:
-    def __init__(self, nmos_pth, pmos_pth, scaler_X_path, scaler_y_path):
+    def __init__(self, nmos_pth, pmos_pth, scaler_X_nmos_path, scaler_y_nmos_path, scaler_X_pmos_path, scaler_y_pmos_path):
         # Load scalers to normalize inputs/outputs for the ANN
-        self.scaler_X = joblib.load(scaler_X_path)
-        self.scaler_y = joblib.load(scaler_y_path)
+        self.scaler_X_nmos = joblib.load(scaler_X_nmos_path)
+        self.scaler_y_nmos = joblib.load(scaler_y_nmos_path)
+        self.scaler_X_pmos = joblib.load(scaler_X_pmos_path)
+        self.scaler_y_pmos = joblib.load(scaler_y_pmos_path)
         
         # Load the trained Surrogate Models (ANNs)
         self.nmos_model = SurrogateModel()
@@ -19,31 +21,34 @@ class RAFFC_OpAmp:
         self.pmos_model.eval()
         
         # Global Circuit Specifications (from the paper's test bench)
-        self.VDD = 3.0       # Volts
+        self.VDD = 1.0       # Volts
         self.CL = 500e-12    # 500 pF Load Capacitance
         self.CC1 = 11e-12    # 11 pF Primary Compensation Capacitor
 
     def get_transistor_params(self, gm_id, L, vds, is_nmos=True):
         """Queries the ANN to get Id/W and gm/gds for a given bias state."""
         raw_inputs = np.array([[gm_id, L, vds]])
-        scaled_inputs = self.scaler_X.transform(raw_inputs)
-        tensor_inputs = torch.tensor(scaled_inputs, dtype=torch.float32)
         
         with torch.no_grad():
             if is_nmos:
+                scaled_inputs = self.scaler_X_nmos.transform(raw_inputs)
+                tensor_inputs = torch.tensor(scaled_inputs, dtype=torch.float32)
                 scaled_preds = self.nmos_model(tensor_inputs).numpy()
+                real_preds = self.scaler_y_nmos.inverse_transform(scaled_preds)
             else:
+                scaled_inputs = self.scaler_X_pmos.transform(raw_inputs)
+                tensor_inputs = torch.tensor(scaled_inputs, dtype=torch.float32)
                 scaled_preds = self.pmos_model(tensor_inputs).numpy()
-                pass
+                real_preds = self.scaler_y_pmos.inverse_transform(scaled_preds)
                 
-        real_preds = self.scaler_y.inverse_transform(scaled_preds)
         id_w, gm_gds = real_preds[0]
+        
         return id_w, gm_gds
 
     def evaluate(self, sizing_guesses):
         """
         sizing_guesses structure: 
-        [gm_id_1, L_1, gm_id_L, L_L, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b]
+        [gm_id_1, L_1, gm_id_L, L_L, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b, Id_1, Id_2, Id_3, Id_b]
         """
         # --- 1. EXTRACT OPTIMIZER GUESSES ---
         gm_id_1, L_1 = sizing_guesses[0], sizing_guesses[1] # M1/M2 (First Stage)
@@ -70,12 +75,11 @@ class RAFFC_OpAmp:
         gm_gds_2 = max(gm_gds_2, 1e-9)
         gm_gds_3 = max(gm_gds_3, 1e-9)
 
-        
-        # Set branch bias currents (Example values)
-        Id_1 = 10e-6  # 10uA for first stage
-        Id_2 = 20e-6  # 20uA for second stage
-        Id_3 = 20e-6  # 20uA for third stage
-        Id_b = 20e-6  # 20uA for feedback stage
+        # Extract branch bias currents from optimizer
+        Id_1 = sizing_guesses[10]
+        Id_2 = sizing_guesses[11]
+        Id_3 = sizing_guesses[12]
+        Id_b = sizing_guesses[13]
         
         # Calculate actual transconductances (gm = gm_id * Id)
         gm1 = gm_id_1 * Id_1
@@ -112,6 +116,12 @@ class RAFFC_OpAmp:
         if gm1 >= gmb:
             return 0, 0, -100, 1e6, 0 # Gain=0, GBW=0, PM=-100 (Failed design)
             
+        # Neural Network Hallucination Penalty
+        # If the ANN predicts a negative or near-zero Id/W, it means the optimizer pushed 
+        # the parameters into an invalid extrapolation region. Penalize it heavily.
+        if id_w_1 <= 1e-4 or id_w_2 <= 1e-4 or id_w_3 <= 1e-4 or id_w_b <= 1e-4 or id_w_L <= 1e-4:
+            return 0, 0, -100, 1e6, 0 
+            
         # E. Predict Required CC2
         CC2_req = (2 * gm3 * (self.CC1**2)) / (gmb * self.CL)
         
@@ -131,11 +141,11 @@ class RAFFC_OpAmp:
         vds_guess = self.VDD / 2.0 
 
         # Extract Id/W from the ANN
-        id_w_1, _ = self.get_transistor_params(gm_id_1, L_1, vds_guess)
-        id_w_2, _ = self.get_transistor_params(gm_id_2, L_2, vds_guess)
-        id_w_3, _ = self.get_transistor_params(gm_id_3, L_3, vds_guess)
-        id_w_b, _ = self.get_transistor_params(gm_id_b, L_b, vds_guess)
+        id_w_1, _ = self.get_transistor_params(gm_id_1, L_1, vds_guess, is_nmos=False)
         id_w_L, _ = self.get_transistor_params(gm_id_L, L_L, vds_guess, is_nmos=True)
+        id_w_2, _ = self.get_transistor_params(gm_id_2, L_2, vds_guess, is_nmos=False)
+        id_w_3, _ = self.get_transistor_params(gm_id_3, L_3, vds_guess, is_nmos=False)
+        id_w_b, _ = self.get_transistor_params(gm_id_b, L_b, vds_guess, is_nmos=True)
 
         # Calculate final physical Widths (W = Id / (Id/W))
         W_1 = Id_1 / id_w_1
@@ -144,18 +154,18 @@ class RAFFC_OpAmp:
         W_b = Id_b / id_w_b
         W_L = Id_1 / id_w_L  # Width for M3 and M4 (ADDED!)
 
-        print(f"Final M1 Dimensions -> W: {W_1*1e6:.2f}um, L: {L_1*1e9:.0f}nm")
+        print(f"Final M1/M2 Dimensions (gm1) -> W: {W_1*1e6:.2f}um, L: {L_1*1e9:.0f}nm")
         print(f"Final M3/M4 Dimensions -> W: {W_L*1e6:.2f}um, L: {L_L*1e9:.0f}nm") # ADDED!
-        print(f"Final M9 Dimensions -> W: {W_2*1e6:.2f}um, L: {L_2*1e9:.0f}nm")
-        print(f"Final M11 Dimensions-> W: {W_3*1e6:.2f}um, L: {L_3*1e9:.0f}nm")
-        print(f"Final M6 Dimensions -> W: {W_b*1e6:.2f}um, L: {L_b*1e9:.0f}nm")
+        print(f"Final M9 Dimensions (gm2) -> W: {W_2*1e6:.2f}um, L: {L_2*1e9:.0f}nm")
+        print(f"Final M11/M13 Dimensions (gm3)-> W: {W_3*1e6:.2f}um, L: {L_3*1e9:.0f}nm")
+        print(f"Final M6 Dimensions (gmb)-> W: {W_b*1e6:.2f}um, L: {L_b*1e9:.0f}nm")
         
         return W_1, W_2, W_3, W_b
     
 
 if __name__ == "__main__":
 
-    testCircuit = RAFFC_OpAmp('nmos_surrogate_model.pth', 'pmos_surrogate_model.pth', 'scaler_X_nmos.pkl', 'scaler_y_nmos.pkl')
+    testCircuit = RAFFC_OpAmp('nmos_surrogate_model.pth', 'pmos_surrogate_model.pth', 'scaler_X_nmos.pkl', 'scaler_y_nmos.pkl', 'scaler_X_pmos.pkl', 'scaler_y_pmos.pkl')
     id_w, gm_gds = testCircuit.get_transistor_params(gm_id=2.0, L=45e-9, vds=1.0, is_nmos=True)
     print("Completed!")
     print(f"{id_w:.2f} uA/um, {gm_gds:.2f} S/S")

@@ -12,15 +12,16 @@ class CircuitOptimizer(Problem):
     def __init__(self, evaluator):
         self.evaluator = evaluator
         
-        # We have 10 variables: 5 pairs of (gm/Id, L)
-        # Sequence: [gm_id_1, L_1, gm_id_L, L_L, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b]
-        n_var = 10
+        # We have 14 variables: 5 pairs of (gm/Id, L) and 4 bias currents
+        # Sequence: [gm_id_1, L_1, gm_id_L, L_L, gm_id_2, L_2, gm_id_3, L_3, gm_id_b, L_b, Id_1, Id_2, Id_3, Id_b]
+        n_var = 14
         
         # Lower and Upper Bounds
         # gm/Id ranges from 2 to 25 (S/A)
         # L ranges from 45nm to 445nm
-        xl = np.array([2.0, 45e-9] * 5)
-        xu = np.array([25.0, 445e-9] * 5)
+        # Bias currents range from 1uA to 100uA
+        xl = np.array([2.0, 45e-9] * 5 + [1e-6] * 4)
+        xu = np.array([25.0, 445e-9] * 5 + [100e-6] * 4)
         
         # Define the problem: 10 variables, 1 objective (Power), 4 constraints
         super().__init__(n_var=n_var, n_obj=1, n_ieq_constr=4, xl=xl, xu=xu)
@@ -36,9 +37,6 @@ class CircuitOptimizer(Problem):
         F = np.zeros((pop_size, 1)) # Objective: Minimize Power
         G = np.zeros((pop_size, 4)) # Constraints
         
-        # Fixed bias currents for the branches (10uA and 20uA)
-        bias_currents = [10e-6, 20e-6, 20e-6, 20e-6] 
-
         for i in range(pop_size):
             guesses = X[i, :]
             
@@ -57,8 +55,8 @@ class CircuitOptimizer(Problem):
             # Target 3: PM >= 60 degrees ->  60 - PM <= 0
             # Target 4: Asymptotic Stability (gmb > gm1) -> gm1 - gmb <= 0
             
-            gm1 = guesses[0] * bias_currents[0] # gm_id_1 * Id_1
-            gmb = guesses[8] * bias_currents[3] # gm_id_b * Id_b
+            gm1 = guesses[0] * guesses[10] # gm_id_1 * Id_1
+            gmb = guesses[8] * guesses[13] # gm_id_b * Id_b
             
             G[i, 0] = 100.0 - gain
             G[i, 1] = 5e6 - gbw
@@ -72,7 +70,14 @@ if __name__ == "__main__":
     print("Initializing Phase 3 Evaluator...")
     # NOTE: Ensure you pass the correct paths to your trained .pth models and scalers
     # Assuming you have instantiated your nmos_model and loaded the weights:
-    evaluator = RAFFC_OpAmp('nmos_surrogate_model.pth', 'pmos_surrogate_model.pth', 'scaler_X_nmos.pkl', 'scaler_y_nmos.pkl')
+    evaluator = RAFFC_OpAmp(
+        'nmos_surrogate_model.pth', 
+        'pmos_surrogate_model.pth', 
+        'scaler_X_nmos.pkl', 
+        'scaler_y_nmos.pkl',
+        'scaler_X_pmos.pkl', 
+        'scaler_y_pmos.pkl'
+    )
     
     # For demonstration, we assume 'evaluator' is properly initialized here.
     problem = CircuitOptimizer(evaluator)
@@ -104,8 +109,8 @@ if __name__ == "__main__":
         print(f"Minimum Power Achieved: {optimal_power * 1e6:.2f} uW")
         
         # Call Phase 3 to calculate final Cadence dimensions!
-        bias_currents = [10e-6, 20e-6, 20e-6, 20e-6]
-        evaluator.calculate_physical_dimensions(optimal_guesses, bias_currents)
+        bias_currents = optimal_guesses[10:14]
+        evaluator.calculate_physical_dimensions(optimal_guesses[:10], bias_currents)
         
     else:
         print("\nOptimization Failed: No design found that satisfies all constraints.")
