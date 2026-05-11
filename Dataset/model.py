@@ -17,7 +17,7 @@ class SurrogateModel(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 64),     # Hidden Layer 2
             nn.ReLU(),
-            nn.Linear(64, 3)       # Outputs: Id/W, gm/gds
+            nn.Linear(64, 6)       # Outputs: 'Id_W', 'gds_W', 'VGS', 'VDSAT', 'Cgg_W', 'Cdd_W'
         )
         
     def forward(self, x):

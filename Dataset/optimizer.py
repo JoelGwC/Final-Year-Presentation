@@ -20,11 +20,11 @@ class CircuitOptimizer(Problem):
         # gm/Id ranges from 2 to 25 (S/A)
         # L ranges from 45nm to 445nm
         # Bias currents range from 1uA to 100uA
-        xl = np.array([2.0, 45e-9] * 5 + [1e-6] * 4)
+        xl = np.array([2.0, 45e-9] * 5 + [5e-6] * 4)
         xu = np.array([25.0, 445e-9] * 5 + [100e-6] * 4)
         
-        # Define the problem: 10 variables, 1 objective (Power), 4 constraints
-        super().__init__(n_var=n_var, n_obj=1, n_ieq_constr=4, xl=xl, xu=xu)
+        # 1 Objective (Minimize Power + Penalties), 4 Inequalities (G <= 0)
+        super().__init__(n_var=n_var, n_obj=1, n_ieq_constr=5, xl=xl, xu=xu)
 
     def _evaluate(self, X, out, *args, **kwargs):
         """
@@ -35,7 +35,7 @@ class CircuitOptimizer(Problem):
         
         # Arrays to store results for the whole population
         F = np.zeros((pop_size, 1)) # Objective: Minimize Power
-        G = np.zeros((pop_size, 4)) # Constraints
+        G = np.zeros((pop_size, 5)) # Constraints
         
         for i in range(pop_size):
             guesses = X[i, :]
@@ -62,7 +62,18 @@ class CircuitOptimizer(Problem):
             G[i, 1] = 5e6 - gbw
             G[i, 2] = 60.0 - pm
             G[i, 3] = gm1 - gmb # Ensures gmb is strictly greater than gm1
-
+            # --- NEW 5TH CONSTRAINT: PDK Minimum Width Verification ---
+            # Extract ANN current densities to verify physical width W = Id / id_w
+            vds_guess = 0.5
+            id_w_2, _, _, _, _, _ = self.evaluator.get_transistor_params(guesses[4], guesses[5], vds_guess, is_nmos=False)
+            id_w_3, _, _, _, _, _ = self.evaluator.get_transistor_params(guesses[6], guesses[7], vds_guess, is_nmos=False)
+            
+            W2 = guesses[11] / max(id_w_2, 1e-6) # Stage 2 Width
+            W3 = guesses[12] / max(id_w_3, 1e-6) # Stage 3 Width
+            
+            # Enforce W >= 120nm (1.2e-7 m). Structured as: 1.2e-7 - W <= 0
+            min_width_found = min(W2, W3)
+            G[i, 4] = 1.2e-7 - min_width_found
         out["F"] = F
         out["G"] = G
 
@@ -102,16 +113,37 @@ if __name__ == "__main__":
     )
     
     if res.X is not None:
-        print("\n--- OPTIMIZATION SUCCESSFUL ---")
-        optimal_guesses = res.X
-        optimal_power = res.F[0]
-        
-        print(f"Minimum Power Achieved: {optimal_power * 1e6:.2f} uW")
-        
-        # Call Phase 3 to calculate final Cadence dimensions!
-        bias_currents = optimal_guesses[10:14]
-        evaluator.calculate_physical_dimensions(optimal_guesses[:10], bias_currents)
-        
+            print("\n--- OPTIMIZATION SEARCH COMPLETE ---")
+            
+            # CRITICAL UPDATE: Robustly unpack the absolute best individual if PyMoo returns a 2D front
+            if res.X.ndim > 1:
+                best_idx = np.argmin(res.F[:, 0])
+                optimal_guesses = res.X[best_idx]
+                optimal_power = res.F[best_idx, 0]
+            else:
+                optimal_guesses = res.X
+                optimal_power = res.F[0]
+                
+            # Firewall Verification Check
+            if optimal_power >= 1e5:
+                print("\n[WARNING] Optimizer converged, but the best design violates DC Saturation Margins!")
+                print("The printed dimensions may push intermediate transistors into the triode region.")
+                print("Recommendation: Relax your GBW target to 2MHz or decrease the 100dB gain constraint.")
+            else:
+                print(f"\n[SUCCESS] Valid DC Operating Point Found!")
+                print(f"Total Electrical Power Consumption: {optimal_power * 1e6:.2f} uW")
+            
+            # Extract and compute final Cadence physical blueprint
+            bias_currents = optimal_guesses[10:14]
+            
+            print("\nOptimized Branch Currents:")
+            print(f"  Stage 1 (Tail Current M0): {bias_currents[0] * 2 * 1e6:.2f} uA")
+            print(f"  Stage 2 (Branch M9/M10):   {bias_currents[1] * 1e6:.2f} uA")
+            print(f"  Stage 3 (Branch M11/M12):  {bias_currents[2] * 1e6:.2f} uA")
+            print(f"  RAFFC Cascode (M5/M7):     {bias_currents[3] * 1e6:.2f} uA")
+            
+            evaluator.calculate_physical_dimensions(optimal_guesses[:10], bias_currents)
+            
     else:
-        print("\nOptimization Failed: No design found that satisfies all constraints.")
-        print("Try relaxing your target specs (e.g., lower Gain to 80dB or PM to 45°).")
+            print("\nOptimization Failed: No design found that satisfies all performance constraints.")
+            print("Try expanding your population size or relaxing target specifications.")
