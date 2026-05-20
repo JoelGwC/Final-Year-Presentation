@@ -20,8 +20,8 @@ class CircuitOptimizer(Problem):
         # gm/Id ranges from 2 to 25 (S/A)
         # L ranges from 45nm to 445nm
         # Bias currents range from 1uA to 100uA
-        xl = np.array([2.0, 45e-9] * 5 + [5e-6] * 4)
-        xu = np.array([25.0, 445e-9] * 5 + [100e-6] * 4)
+        xl = np.array([10.0, 45e-9] * 5 + [10e-6, 5e-6, 5e-6, 10e-6])
+        xu = np.array([30.0, 445e-9] * 5 + [300e-6, 300e-6, 300e-6, 300e-6])
         
         # 1 Objective (Minimize Power + Penalties), 4 Inequalities (G <= 0)
         super().__init__(n_var=n_var, n_obj=1, n_ieq_constr=5, xl=xl, xu=xu)
@@ -58,8 +58,8 @@ class CircuitOptimizer(Problem):
             gm1 = guesses[0] * guesses[10] # gm_id_1 * Id_1
             gmb = guesses[8] * guesses[13] # gm_id_b * Id_b
             
-            G[i, 0] = 100.0 - gain
-            G[i, 1] = 5e6 - gbw
+            G[i, 0] = 40.0 - gain
+            G[i, 1] = 1e5 - gbw
             G[i, 2] = 60.0 - pm
             G[i, 3] = gm1 - gmb # Ensures gmb is strictly greater than gm1
             # --- NEW 5TH CONSTRAINT: PDK Minimum Width Verification ---
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     )
     
     # Run the optimization for 100 generations
-    termination = get_termination("n_gen", 100)
+    termination = get_termination("n_gen", 100000)
     
     print("Starting optimization loop (This may take a minute depending on CPU/GPU)...")
     res = minimize(

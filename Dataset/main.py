@@ -68,7 +68,8 @@ def generate_dataset(transistor):
         'VGS':   f"{transistor_dir}/vgs_vs_gmid_vdssweep.vcsv",
         'VDSAT': f"{transistor_dir}/vdsat_vs_gmid_vdssweep.vcsv",
         'Cgg_W': f"{transistor_dir}/cggW_vs_gmid_vdssweep.vcsv",
-        'Cdd_W': f"{transistor_dir}/cddW_vs_gmid_vdssweep.vcsv"
+        'Cdd_W': f"{transistor_dir}/cddW_vs_gmid_vdssweep.vcsv",
+        # 'fT': f"{transistor_dir}/fT_vs_gmid_vdssweep.vcsv"
     }
 
     # 1. Parse the base file to initialize the master DataFrame
@@ -143,10 +144,10 @@ def plot_extended_metrics(df, transistor):
     axs[1, 0].set_ylabel('Cgg/W (nF/m)')
     fig.colorbar(sc2, ax=axs[1, 0]).set_label('Length (nm)')
 
-    sc3 = axs[1, 1].scatter(df['gm_Id'], df['Cdd_W']*1e9, c=colors, cmap='magma', alpha=0.6)
-    axs[1, 1].set_title('Normalized Drain Capacitance vs gm/Id')
+    sc3 = axs[1, 1].scatter(df['gm_Id'], df['Id_W']*1e6, c=colors, cmap='magma', alpha=0.6)
+    axs[1, 1].set_title('Normalized Current Density Capacitance vs gm/Id')
     axs[1, 1].set_xlabel('gm/Id (S/A)')
-    axs[1, 1].set_ylabel('Cdd/W (nF/m)')
+    axs[1, 1].set_ylabel('Id/W (uA/um)')
     fig.colorbar(sc3, ax=axs[1, 1]).set_label('Length (nm)')
 
     plt.tight_layout()
