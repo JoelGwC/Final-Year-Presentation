@@ -69,6 +69,7 @@ class CommonSourceOptimizer(Problem):
         gmid5 = np.full(pop_size, self.specs['gmid5'])
         vds5 = np.full(pop_size, self.specs['VDD'] - self.specs['VOUT'])
         vds6 = np.full(pop_size, self.specs['VOUT'])
+        L5 = L2
 
         # 2. Prepare Inputs and Predict using PyTorch
         # Map predictions to physical parameters
