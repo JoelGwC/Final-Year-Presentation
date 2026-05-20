@@ -45,7 +45,7 @@ class CommonSourceOptimizer(Problem):
         # 4 Variables: [gmid_1, gmid_6, L1, L2, L6]
         # 2 Objectives: [Minimize -Gain (Maximize Gain), Minimize Id (Power)]
         # 2 Constraints: [fT1 >= 10GHz, W1 > 0 (valid bandwidth limit)]
-        super().__init__(n_var=4, n_obj=2, n_ieq_constr=7, 
+        super().__init__(n_var=5, n_obj=2, n_ieq_constr=7, 
                          xl=np.array([5.0, 5.0, 45e-9, 45e-9, 45e-9]), 
                          xu=np.array([15.0, 15.0, 200e-9, 300e-9, 300e-9]))
         
@@ -172,7 +172,6 @@ if __name__ == "__main__":
         'VDD': 1.0,         # 1 V
         'gmid2': 10.0,       # PMOS gm/Id
         'gmid5': 10.0,       # PMOS gm/Id
-        'gmid6': 10.0,       # PMOS gm/Id
         'ICM': 0.7,
         'VOUT': 0.5         #0.5V
     }
@@ -212,16 +211,16 @@ if __name__ == "__main__":
     best_F = res.F[chosen_index]
     
     gmid1_opt = best_X[0]
-    
-    L1_opt = best_X[1]
-    L2_opt = best_X[2]
-    L5_opt = best_X[3]
+    gmid6_opt = best_X[1]
+    L1_opt = best_X[2]
+    L2_opt = best_X[3]
     L6_opt = best_X[4]
     
     print(f"Selected Design - Predicted Gain: {-best_F[0]:.2f} V/V, Total Current: {best_F[1]*1e6:.2f} uA")
     print(f"Optimal L1/L2 (NMOS): {L1_opt * 1e9:.2f} nm")
     print(f"Optimal L3/L4 (PMOS): {L2_opt * 1e9:.2f} nm")
-    print(f"Optimal gm/Id M1:  {gmid1_opt:.2f} S/A")
+    print(f"Optimal gm/Id M1/M2:  {gmid1_opt:.2f} S/A")
+    print(f"Optimal gm/Id M3/M4:  {specs['gmid2']:.2f} S/A")
 
     # 2. Re-run the ANN for this specific point to get the Widths
     n_params, p_params = resolve_operating_point(gmid1_opt, L1_opt, L2_opt, specs)
@@ -241,6 +240,7 @@ if __name__ == "__main__":
     print(f"Optimal W2/W3 (PMOS): {W2_opt * 1e6:.2f} um")
     print(f"Optimal VGS1 (NMOS): {vgsn_opt:.2f} V")
     print(f"Optimal VGS2 (PMOS): {abs(vgsp_opt):.2f} V")
+    print(f"First stage current: {id1:.2f} V")
 
     # 4. Sizing the Tail Current Source
     Vs1 = specs['ICM'] - vgsn_opt
@@ -265,21 +265,23 @@ if __name__ == "__main__":
     gm5 = 4*np.pi*Cc*fu
     id5_calculated = gm5/specs['gmid5']
     vds5 = specs['VDD'] - specs['VOUT']
-    id_w5, gds_w5, vgs5, vdsat5, cgg_w5, cdd_w5 =get_transistor_params(specs['gmid5'], L5_opt, vds5, is_nmos=False)
-
+    # id_w5, gds_w5, vgs5, vdsat5, cgg_w5, cdd_w5 =get_transistor_params(specs['gmid5'], L2_opt, vds5, is_nmos=False)
+    id_w5 = id_wp_opt
     W5_opt = id5_calculated/id_w5
  
-    id_w6, gds_w6, vgs6, vdsat6, cgg_w6, cdd_w6 =get_transistor_params(specs['gmid6'], L6_opt, specs['VOUT'], is_nmos=True)
+    id_w6, gds_w6, vgs6, vdsat6, cgg_w6, cdd_w6 =get_transistor_params(gmid6_opt, L6_opt, specs['VOUT'], is_nmos=True)
     W6_opt = id5_calculated/id_w6
 
     print(f"From Total Current: {id5_fromtotal*1e6:.2f} uA")
     print(f"Calculated Current: {id5_calculated*1e6:.2f} uA")
     print(f"Optimal gm/id5: {specs['gmid5']:.2f} S/A")
-    print(f"Optimal L5 (PMOS): {L5_opt * 1e9:.2f} nm")
+    print(f"Optimal gm/id6: {gmid6_opt:.2f} S/A")
+    print(f"Optimal L5 (PMOS): {L2_opt * 1e9:.2f} nm")
     print(f"Optimal W5 (PMOS): {W5_opt * 1e6:.2f} um")
     print(f"Optimal L6 (NMOS): {L6_opt * 1e9:.2f} nm")
     print(f"Optimal W6 (NMOS): {W6_opt * 1e6:.2f} um")
     print(f"Optimal VGS3 (NMOS): {abs(vgs6):.2f} V") 
+    print(f"Optimal Vout: {specs['VOUT']:.2f} V")
 
     plot.add(np.column_stack([f1_gain, f2_id]))
     plot.show()
