@@ -216,7 +216,7 @@ if __name__ == "__main__":
     L2_opt = best_X[3]
     L6_opt = best_X[4]
     
-    print(f"Selected Design - Predicted Gain: {-best_F[0]:.2f} V/V, Total Current: {best_F[1]*1e6:.2f} uA")
+    print(f"Selected Design - Predicted Gain: {-best_F[0]/2:.2f} V/V, Total Current: {best_F[1]*1e6:.2f} uA")
     print(f"Optimal L1/L2 (NMOS): {L1_opt * 1e9:.2f} nm")
     print(f"Optimal L3/L4 (PMOS): {L2_opt * 1e9:.2f} nm")
     print(f"Optimal gm/Id M1/M2:  {gmid1_opt:.2f} S/A")
