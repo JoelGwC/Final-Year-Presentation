@@ -46,8 +46,8 @@ class RAFFCOptimizer(Problem):
         vgs14 = np.abs(vgs14) # Protect against negative values
 
         # B. Stage 3 Diode Load (M12)
-        id_w12, gds_w12, vgs12seed, vdsat12, _, _ = get_transistor_params(gmid12, L12, vds_out, is_nmos=True)
-        id_w12, gds_w12, vgs12, vdsat12, _, _ = get_transistor_params(gmid12, L12, vgs12seed, is_nmos=True)
+        vds_M12 = np.clip(vgs14, 0.05, 0.95)
+        id_w12, gds_w12, vgs12, vdsat12, _, _ = get_transistor_params(gmid12, L12, vds_M12, is_nmos=True)
         vgs12 = np.abs(vgs12)
 
         # C. Stage 3 Gain Node (M11)
@@ -117,11 +117,13 @@ class RAFFCOptimizer(Problem):
         gm1 = 2 * np.pi * fu * Cc1
         
         tan_phi = math.tan(math.radians(PM))
-        gm6 = gm1 * (tan_phi + 0.7) 
+        gm6_PM = gm1 * (tan_phi + 0.7) 
         
         gm11 = 4 * np.pi * fu * Cl  
         gm9 = gm11                  
         gm13 = gm11                 
+        gm6_nested = (2 * gm11 * Cc1) / (0.8 * Cl)
+        gm6 = np.maximum(gm6_PM, gm6_nested)
 
         # 6. Calculate Currents
         id1 = gm1 / gmid1
@@ -151,8 +153,8 @@ class RAFFCOptimizer(Problem):
         ro2 = 1.0 / (gds_w1 * W1)
         ro4 = 1.0 / (gds_w3 * W4)
         ro6 = 1.0 / (gds_w6 * W6)
-        
         R_down = gm6 * ro6 * ((ro2 * ro4) / (ro2 + ro4))
+
         Rout1 = (ro8 * R_down) / (ro8 + R_down) 
         Rout2 = 1.0 / ((gds_w9 * W9) + (gds_w10 * W10))
         Rout3 = 1.0 / ((gds_w13 * W13) + (gds_w14 * W14))
@@ -161,6 +163,9 @@ class RAFFCOptimizer(Problem):
         gm11_effective = gm11 * current_mirror_ratio
         gain_total = (gm1 * Rout1) * (gm9 * Rout2) * (gm11_effective * Rout3)
         
+
+        Cc2_opt = (2.0 * gm11 * (self.specs['Cc1'] ** 2)) / (gm6 * self.specs['Cl'])
+
         # 9. Assign Objectives
         f1 = -gain_total  
         f2 = total_Id     
@@ -188,6 +193,14 @@ class RAFFCOptimizer(Problem):
         
         # FIXED g10: Ensures available headroom supports the cascode + folding sink
         g10 = (vds_fold + vdsat6 + v_margin) - (self.specs['VDD'] - vgs9)
+
+        # Constraint 14: Force VGS11 prediction to align with the 0.5V Stage 2 Anchor
+        # We allow a tight +/- 10mV tolerance to allow the algorithm to converge
+        # vgs11_target = 0.5
+        # vgs11_tolerance = 0.02
+        
+        # # np.abs() forces both positive and negative errors to be evaluated as a violation
+        # g11 = np.abs(vgs11 - vgs11_target) - vgs11_tolerance
 
         out["F"] = np.column_stack([f1, f2])
         out["G"] = np.column_stack([g1, g2, g3, g4, g5, g6, g7, g8, g9, g10])
@@ -217,10 +230,10 @@ if __name__ == "__main__":
         'ft_target': 20e6,   
         'VDD': 1.0,          
         'PM': 60,           
-        'Cl': 500e-12,      
-        'Cc1': 11e-12,       
+        'Cl': 100e-12,      
+        'Cc1': 10e-12,       
         'ICM': 0.3,          
-        'gmid0': 15.0,
+        'gmid0': 10.0,
         'L0': 400e-9,
         'vds_fold': 0.2,
         "vds_out": 0.5
@@ -228,7 +241,7 @@ if __name__ == "__main__":
     }
 
     problem = RAFFCOptimizer(nmos_model, pmos_model, scalers, specs)
-    algorithm = NSGA2(pop_size=400)
+    algorithm = NSGA2(pop_size=200)
     
     print("Running NSGA-II Optimization...")
     res = minimize(problem, algorithm, ('n_gen', 1000), seed=1, verbose=True)
@@ -256,16 +269,18 @@ if __name__ == "__main__":
     
     gm1 = 2 * np.pi * fu * Cc1
     tan_phi = math.tan(math.radians(specs['PM']))
-    gm6 = gm1 * (tan_phi + 0.7) 
+    gm6_PM = gm1 * (tan_phi + 0.7) 
     gm11 = 4 * np.pi * fu * Cl 
     gm9, gm13 = gm11, gm11
+    gm6_nested = (2 * gm11 * Cc1) / (0.8 * Cl)
+    gm6 = np.maximum(gm6_PM, gm6_nested)
     
     Cc2_opt = (2 * gm11 * (Cc1**2)) / (gm6 * Cl)
 
     # Re-evaluate exactly matching the Backward Propagation logic
     # Stage 3 backward
-    id_w14, _, vgs14_opt, _, _, _ = get_transistor_params(gmid12_opt, L12_opt, specs['vds_out'], is_nmos=True)
-    id_w13, _, _, _, _, _ = get_transistor_params(gmid9_opt, L9_opt, specs['vds_out'], is_nmos=False)
+    id_w14, _, vgs14_opt, _, _, _ = get_transistor_params(gmid12_opt, L12_opt, (specs['VDD'] - specs['vds_out']), is_nmos=True)
+    id_w13, _, vgs13_opt, _, _, _ = get_transistor_params(gmid9_opt, L9_opt, specs['vds_out'], is_nmos=False)
     vgs14_opt = np.abs(vgs14_opt)
     
     vds_M12_opt = np.clip(vgs14_opt, 0.05, 0.95)
@@ -277,11 +292,11 @@ if __name__ == "__main__":
     vgs11_opt = np.abs(vgs11_opt)
     
     # Stage 2 backward
-    vds_M9_opt = np.clip(vgs11_opt, 0.05, 0.95)
+    vds_M9_opt = specs['VDD'] -specs['vds_out']
     id_w9, _, vgs9_opt, _, _, _ = get_transistor_params(gmid9_opt, L9_opt, vds_M9_opt, is_nmos=False) 
     vgs9_opt = np.abs(vgs9_opt)
     
-    vds_M10_opt = np.clip(specs['VDD'] - vgs11_opt, 0.05, 0.95)
+    vds_M10_opt = np.clip(specs['vds_out'], 0.05, 0.95)
     id_w10, _, vgs10_opt, _, _, _ = get_transistor_params(gmid10_opt, L10_opt, vds_M10_opt, is_nmos=True)
 
     # Stage 1 backward
@@ -299,7 +314,7 @@ if __name__ == "__main__":
     vs1_opt = specs['ICM'] + np.abs(vgs1_guess)
     vds1_mag_opt = np.clip(vs1_opt - specs['vds_fold'], 0.05, 0.95)
     id_w1, _, _, _, _, _ = get_transistor_params(gmid1_opt, L1_opt, vds1_mag_opt, is_nmos=False)
-    id_w0, _, _, _, _, _ = get_transistor_params(specs['gmid0'], specs['L0'], specs['VDD'] - vs1_opt, is_nmos=False)
+    id_w0, _, vgs0_opt, _, _, _ = get_transistor_params(specs['gmid0'], specs['L0'], specs['VDD'] - vs1_opt, is_nmos=False)
 
     # Calculate True Branch Currents
     i_stage1 = gm1/gmid1_opt
@@ -313,12 +328,17 @@ if __name__ == "__main__":
     print(f"Input Pair (M1, M2)  -> gm/Id: {gmid1_opt:.2f} S/A | L: {L1_opt*1e9:.2f}nm | W: {i_stage1/id_w1 * 1e6:.2f}um | Current: {i_stage1*1e6:.2f}uA")
     print(f"Cascodes (M5, M6)    -> gm/Id: {gmid6_opt:.2f} S/A | L: {L6_opt*1e9:.2f}nm | W: {i_cascode/id_w6 * 1e6:.2f}um | Current: {i_cascode*1e6:.2f}uA")
     print(f"Vgs6 (VB3) -> {vgs6_opt*1e3:.2f} mV")
+    print(f"Vgs0 (VB0) -> {vgs0_opt*1e3:.2f} mV")
     print(f"Top PMOS (M7, M8)    -> gm/Id: {gmid8_opt:.2f} S/A | L: {L8_opt*1e9:.2f}nm | W: {i_cascode/id_w8 * 1e6:.2f}um | Current: {i_cascode*1e6:.2f}uA")
     print(f"VDS8: {vds_M8_opt * 1e3:.2f} mV")
     print(f"VGS8: {vgs8_opt * 1e3:.2f} mV")
     print(f"VGS9: {vgs9_opt * 1e3:.2f} mV")
+    print(f"VGS13: {vgs13_opt * 1e3:.2f} mV")
     print(f"VGS12: {vgs12_opt * 1e3:.2f} mV")
     print(f"VGS14: {vgs14_opt * 1e3:.2f} mV")
+    print(f"VGS11: {vgs11_opt * 1e3:.2f} mV")
+    print(f"VDSM6: {(specs['VDD']-vgs9_opt-specs['vds_fold']) * 1e3:.2f} mV")
+
     print(f"Fold Sinks (M3, M4)  -> gm/Id: {gmid3_opt:.2f} S/A | L: {L3_opt*1e9:.2f}nm | W: {(i_stage1+i_cascode)/id_w3 * 1e6:.2f}um | Current: {(i_stage1+i_cascode)*1e6:.2f}uA")
     print(f"Vgs3 (VB2) -> {vgs3_opt*1e3:.2f} mV")
     
